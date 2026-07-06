@@ -67,6 +67,23 @@ class TestPersonalTutorAPI:
         assert data["success"] is True
         assert data["metadata"]["title"] == "Biology Fact"
         assert "content_preview" in data
+
+    def test_ingest_triggers_cognification(self):
+        """Test that ingestion triggers cognification after saving the material"""
+        test_material = {
+            "content": "Neural networks learn from patterns in data.",
+            "title": "AI Basics"
+        }
+
+        with patch('main.cognee.add', new_callable=AsyncMock), \
+             patch('main.cognee.cognify', new_callable=AsyncMock), \
+             patch('main.asyncio.sleep', new_callable=AsyncMock):
+            response = client.post("/ingest", json=test_material)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "indexed successfully" in data["message"].lower()
     
     def test_ingest_empty_content_fails(self):
         """Test that empty content is rejected"""
@@ -82,18 +99,45 @@ class TestPersonalTutorAPI:
     
     def test_quiz_generation_without_material(self):
         """Test quiz generation when no material exists"""
-        # This test assumes a fresh state or that Cognee returns empty results
-        response = client.post("/quiz/generate")
-        
-        # Should either succeed with a default question or fail gracefully
-        assert response.status_code in [200, 404]
-        
-        if response.status_code == 200:
-            data = response.json()
-            assert "questions" in data
-        else:
-            data = response.json()
-            assert "study materials" in data["detail"].lower()
+        with patch('main.cognee.search', new_callable=AsyncMock, return_value=[]):
+            response = client.post("/quiz/generate", json={"num_questions": 1})
+
+        assert response.status_code == 400
+        data = response.json()
+        assert data == {"error": "No usable study material"}
+
+    def test_quiz_generation_returns_array_and_supports_alias(self):
+        """Test that quiz generation returns an array of questions and works on the alias route"""
+        search_results = [
+            {"content": "One short sentence about biology.", "metadata": {"title": "Bio 1"}}
+        ]
+
+        with patch('main.cognee.search', new_callable=AsyncMock, return_value=search_results):
+            response = client.post("/quiz", json={"num_questions": 1})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert "question" in data[0]
+        assert "options" in data[0]
+
+    def test_quiz_generation_respects_num_questions(self):
+        """Test that quiz generation honors the requested number of questions"""
+        search_results = [
+            {"content": "One short sentence about biology.", "metadata": {"title": "Bio 1"}},
+            {"content": "Another short sentence about chemistry.", "metadata": {"title": "Chem 1"}},
+            {"content": "A third short sentence about physics.", "metadata": {"title": "Phys 1"}},
+        ]
+
+        with patch('main.cognee.search', new_callable=AsyncMock, return_value=search_results):
+            response = client.post("/quiz/generate", json={"num_questions": 3})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert len(data["questions"]) == 3
+        assert data["total_questions"] == 3
     
     def test_quiz_answer_invalid_question(self):
         """Test answering a question that doesn't exist"""
