@@ -1,3 +1,5 @@
+![logo](https://github.com/Tech-Psycho95/SidTeach/blob/main/sid%20teach.png)
+
 # SidTeach - A Personal Tutor Agent with Cogne
 
 A minimal but complete Personal Tutor Agent that uses Cognee as the primary data retrieval and memory layer.
